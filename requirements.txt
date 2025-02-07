@@ -1,0 +1,11 @@
+langchain_core
+python-dotenv
+langchain_community
+langchain_huggingface
+groq
+langchain-groq
+requests
+fastapi
+uvicorn
+yfinance
+langchain_google_genai
