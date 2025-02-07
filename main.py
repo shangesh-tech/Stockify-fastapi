@@ -20,7 +20,7 @@ app = FastAPI()
 # Allow CORS for specific origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Allow your frontend's origin
+    allow_origins=["https://stockify-pink.vercel.app"],  
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
