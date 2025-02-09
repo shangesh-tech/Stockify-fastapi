@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 import yfinance as yf
 import os
 from dotenv import load_dotenv
@@ -11,40 +10,38 @@ from fastapi.middleware.cors import CORSMiddleware
 from cachetools import TTLCache
 import logging
 
-# Load environment variables
+
 load_dotenv()
 
-# FastAPI instance
 app = FastAPI()
 
-# Allow CORS for specific origins
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://stockify-pink.vercel.app","https://stockify-backend-3mmq.onrender.com"],  
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],  
+    allow_headers=["*"], 
 )
 
-# Define request body models
+
 class StockRequest(BaseModel):
     symbol: str
-    time_period: str  # e.g., "1mo", "1y", "5y"
+    time_period: str  
 
 class InvestmentRequest(BaseModel):
-    experience: str  # Investment experience (e.g., "Beginner", "Medium", "Advanced")
-    risk: str  # Risk tolerance (e.g., "Low Risk", "Conservative", "High Risk")
-    investment_type: str  # "SIP" or "Lumpsum"
-    amount: float  # Amount to invest
+    experience: str  
+    risk: str 
+    investment_type: str  
+    amount: float 
 
 # Setup API keys and models
 gemini_api_key = os.getenv("GEMINI_API_KEY")
-groq_api_key = os.getenv("GROQ_API_KEY")
+
 
 if not gemini_api_key:
     raise ValueError("No Gemini API key found. Please set GEMINI_API_KEY in .env file")
-if not groq_api_key:
-    raise ValueError("GROQ_API_KEY environment variable is required.")
+
 
 # Initialize AI models
 gemini = ChatGoogleGenerativeAI(
@@ -52,13 +49,9 @@ gemini = ChatGoogleGenerativeAI(
     google_api_key=gemini_api_key
 )
 
-groq_model = ChatGroq(
-    model="mixtral-8x7b-32768",
-    temperature=0,
-    max_tokens=1000,
-)
 
-# Set up TTL cache
+
+# TTL cache
 cache = TTLCache(maxsize=100, ttl=600)
 
 # Comprehensive Analysis Prompt
@@ -358,6 +351,29 @@ def calculate_portfolio(experience, risk, amount):
 
     return portfolio_summary
 
+
+portfolio_summary_prompt = """
+You are an investment advisor. Based on the following portfolio allocation, provide a detailed analysis and recommendations:
+
+Investment Profile:
+- Experience Level: {experience}
+- Risk Tolerance: {risk}
+
+Portfolio Allocation:
+- Gold: {gold_amount} ({gold_percentage}%)
+- Nifty 50: {nifty_amount} ({nifty_percentage}%)
+- Blue Chips: {blue_amount} ({blue_percentage}%)
+- Mid Cap: {mid_amount} ({mid_percentage}%)
+- Small Cap: {small_amount} ({small_percentage}%)
+
+Provide a comprehensive analysis in JSON format with the following structure:
+{
+    "portfolio_summary"": "Brief overview of the portfolio strategy",
+    "pros": ["List of key advantages"],
+    "cons": ["List of potential drawbacks"],
+}
+"""
+
 def generate_portfolio_summary(experience, risk, allocation):
     cache_key = f"{experience}_{risk}_{str(allocation)}"
     
@@ -365,36 +381,45 @@ def generate_portfolio_summary(experience, risk, allocation):
         logging.info("Cache hit for portfolio summary.")
         return cache[cache_key]
     
-    prompt = f"""
-    Based on the following investment experience '{experience}' and risk tolerance '{risk}', 
-    the portfolio allocation is as follows:
-    - Gold: {allocation['gold_investment']['amount']} ({allocation['gold_investment']['percentage']}%)
-    - Nifty 50: {allocation['nifty_50_investment']['amount']} ({allocation['nifty_50_investment']['percentage']}%)
-    - Blue Chips: {allocation['blue_chips_investment']['amount']} ({allocation['blue_chips_investment']['percentage']}%)
-    - Mid Cap: {allocation['mid_cap_investment']['amount']} ({allocation['mid_cap_investment']['percentage']}%)
-    - Small Cap: {allocation['small_cap_investment']['amount']} ({allocation['small_cap_investment']['percentage']}%)
+    prompt_template = PromptTemplate(
+        input_variables=[
+            "experience", "risk",
+            "gold_amount", "gold_percentage",
+            "nifty_amount", "nifty_percentage",
+            "blue_amount", "blue_percentage",
+            "mid_amount", "mid_percentage",
+            "small_amount", "small_percentage"
+        ],
+        template=portfolio_summary_prompt
+    )
     
-    Provide a short summary of this portfolio and pros/cons based on these investments in JSON format.
-    """
-
-    messages = [
-        ("system", "You are an investment advisor. Based on the given portfolio allocation, provide pros and cons."),
-        ("human", prompt)
-    ]
+    chain = LLMChain(prompt=prompt_template, llm=gemini)
     
-    ai_msg = groq_model.invoke(messages)
-    response = ai_msg.content
-
+    response = chain.run(
+        experience=experience,
+        risk=risk,
+        gold_amount=allocation["gold"]["amount"],
+        gold_percentage=allocation["gold"]["percentage"],
+        nifty_amount=allocation["nifty_50"]["amount"],
+        nifty_percentage=allocation["nifty_50"]["percentage"],
+        blue_amount=allocation["blue_chips"]["amount"],
+        blue_percentage=allocation["blue_chips"]["percentage"],
+        mid_amount=allocation["mid_cap"]["amount"],
+        mid_percentage=allocation["mid_cap"]["percentage"],
+        small_amount=allocation["small_cap"]["amount"],
+        small_percentage=allocation["small_cap"]["percentage"]
+    )
+    
     cache[cache_key] = response
-
     return response
+
 
 # API Routes
 @app.get("/")
 async def root():
     return {"message": "Welcome to the AI Financial Analysis Server!"}
 
-# API Routes (continued)
+
 @app.post("/get-stock-analysis")
 async def get_stock_analysis(stock: StockRequest):
     try:
