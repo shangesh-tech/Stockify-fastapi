@@ -45,7 +45,7 @@ if not gemini_api_key:
 
 # Initialize AI models
 gemini = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash", 
+    model="stockifyfinetune-3h417d5fuo14", 
     google_api_key=gemini_api_key
 )
 
